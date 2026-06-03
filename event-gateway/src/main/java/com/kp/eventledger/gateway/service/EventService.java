@@ -1,6 +1,7 @@
 package com.kp.eventledger.gateway.service;
 
 import com.kp.eventledger.gateway.entity.Event;
+import com.kp.eventledger.gateway.exception.ServiceUnavailableException;
 import com.kp.eventledger.gateway.repository.EventRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.web.client.RestTemplate;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.web.client.RestClientException;
 
 import java.util.Map;
@@ -24,7 +26,7 @@ public class EventService {
     private final EventRepository repository;
     private final RestTemplate restTemplate;
     private final MeterRegistry meterRegistry;
-
+    @CircuitBreaker(name = "accountService", fallbackMethod = "fallbackCreateEvent")
     public Event createEvent(Event event) {
 
         log.info("Processing event: eventId={}, accountId={}",
@@ -75,7 +77,7 @@ public class EventService {
 
             //METRIC: failure count
             meterRegistry.counter("events.failed.count").increment();
-            throw ex;
+            throw new ServiceUnavailableException("Account Service is unavailable. Please try again later.");
         }
     }
 
@@ -87,5 +89,13 @@ public class EventService {
     public List<Event> getEvents(String accountId) {
         log.info("Fetching events for accountId={}", accountId);
         return repository.findByAccountIdOrderByEventTimestamp(accountId);
+    }
+    public Event fallbackCreateEvent(Event event, Exception ex) {
+
+        log.error("Circuit breaker triggered for eventId={}", event.getEventId(), ex);
+
+        meterRegistry.counter("events.failed.count").increment();
+
+        throw new ServiceUnavailableException("Account Service temporarily unavailable (circuit breaker open)");
     }
 }

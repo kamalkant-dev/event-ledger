@@ -1,7 +1,9 @@
+D:\Learning\event-ledger\event-gateway\src\main\java\com\kp\eventledger\gateway\config\RestTemplateConfig.java
 D:\Learning\event-ledger\event-gateway\src\main\java\com\kp\eventledger\gateway\entity\Event.java
+D:\Learning\event-ledger\event-gateway\src\main\java\com\kp\eventledger\gateway\exception\ServiceUnavailableException.java
 D:\Learning\event-ledger\event-gateway\src\main\java\com\kp\eventledger\gateway\config\TraceFilter.java
 D:\Learning\event-ledger\event-gateway\src\main\java\com\kp\eventledger\gateway\service\EventService.java
-D:\Learning\event-ledger\event-gateway\src\main\java\com\kp\eventledger\gateway\config\AppConfig.java
 D:\Learning\event-ledger\event-gateway\src\main\java\com\kp\eventledger\gateway\repository\EventRepository.java
+D:\Learning\event-ledger\event-gateway\src\main\java\com\kp\eventledger\gateway\exception\GlobalExceptionHandler.java
 D:\Learning\event-ledger\event-gateway\src\main\java\com\kp\eventledger\gateway\controller\EventController.java
 D:\Learning\event-ledger\event-gateway\src\main\java\com\kp\eventledger\gateway\EventGatewayApplication.java
