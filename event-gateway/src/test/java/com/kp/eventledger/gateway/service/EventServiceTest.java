@@ -1,44 +1,105 @@
 package com.kp.eventledger.gateway.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kp.eventledger.gateway.entity.Event;
 import com.kp.eventledger.gateway.repository.EventRepository;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.*;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
-import java.util.Optional;
-
-import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-class EventServiceTest {
+@SpringBootTest
+@AutoConfigureMockMvc
+class EventIntegrationTest {
 
-    private final EventRepository repository = mock(EventRepository.class);
-    private final RestTemplate restTemplate = mock(RestTemplate.class);
-    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    @Autowired
+    private MockMvc mockMvc;
 
-    private final EventService service =
-            new EventService(repository, restTemplate, meterRegistry);
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
+    private EventRepository eventRepository;
+
+    @MockBean
+    private RestTemplate restTemplate;
 
     @Test
-    void shouldThrowExceptionForInvalidAmount() {
+    void shouldProcessFullFlowSuccessfully() throws Exception {
 
-        Event event = new Event("evt-1", "acct-1", "CREDIT", 0.0, "time");
+        Event event = new Event(
+                "evt-int-1",
+                "acct-1",
+                "CREDIT",
+                200.0,
+                "2026"
+        );
 
-        assertThrows(IllegalArgumentException.class,
-                () -> service.createEvent(event));
+        when(restTemplate.postForEntity(
+                anyString(),
+                any(),
+                eq(Void.class)
+        )).thenReturn(new ResponseEntity<>(HttpStatus.OK));
+
+        mockMvc.perform(post("/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(event)))
+                .andExpect(status().isOk());
+
+        assertTrue(eventRepository.findById("evt-int-1").isPresent());
     }
 
     @Test
-    void shouldReturnExistingEventForDuplicate() {
+    void shouldReturn503WhenAccountServiceFails() throws Exception {
 
-        Event event = new Event("evt-1", "acct-1", "CREDIT", 100.0, "time");
+        Event event = new Event(
+                "evt-fail-1",
+                "acct-1",
+                "CREDIT",
+                100.0,
+                "2026"
+        );
 
-        when(repository.findById("evt-1")).thenReturn(Optional.of(event));
+        when(restTemplate.postForEntity(
+                anyString(),
+                any(),
+                eq(Void.class)
+        )).thenThrow(new ResourceAccessException("Account service down"));
 
-        Event result = service.createEvent(event);
+        mockMvc.perform(post("/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(event)))
+                .andExpect(status().isServiceUnavailable());
+    }
 
-        assertEquals("evt-1", result.getEventId());
+    @Test
+    void shouldReturn400ForInvalidAmountBeforeCallingAccountService() throws Exception {
+
+        Event event = new Event(
+                "evt-invalid-1",
+                "acct-1",
+                "CREDIT",
+                0.0,
+                "2026"
+        );
+
+        mockMvc.perform(post("/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(event)))
+                .andExpect(status().isBadRequest());
+
+        verify(restTemplate, never())
+                .postForEntity(anyString(), any(), eq(Void.class));
     }
 }

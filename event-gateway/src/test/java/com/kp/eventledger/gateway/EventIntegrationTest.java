@@ -12,6 +12,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.client.RestTemplate;
 
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -48,5 +50,25 @@ class EventIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(event)))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void shouldReturn400ForInvalidAmountWithoutCallingAccountService() throws Exception {
+
+        Event event = new Event(
+                "evt-invalid-int-1",
+                "acct-1",
+                "CREDIT",
+                0.0,
+                "2026"
+        );
+
+        mockMvc.perform(post("/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(event)))
+                .andExpect(status().isBadRequest());
+
+        verify(restTemplate, never())
+                .postForEntity(anyString(), any(), eq(Void.class));
     }
 }

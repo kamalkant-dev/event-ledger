@@ -15,3 +15,5 @@ services:
       - "8080:8080"
     depends_on:
       - account-service
+    environment:
+      ACCOUNT_SERVICE_URL: http://account-service:8081

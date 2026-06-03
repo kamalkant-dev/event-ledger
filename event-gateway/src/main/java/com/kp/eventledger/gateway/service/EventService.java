@@ -3,20 +3,21 @@ package com.kp.eventledger.gateway.service;
 import com.kp.eventledger.gateway.entity.Event;
 import com.kp.eventledger.gateway.exception.ServiceUnavailableException;
 import com.kp.eventledger.gateway.repository.EventRepository;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
-import io.micrometer.core.instrument.MeterRegistry;
-import org.springframework.web.client.RestTemplate;
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestTemplate;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -26,18 +27,24 @@ public class EventService {
     private final EventRepository repository;
     private final RestTemplate restTemplate;
     private final MeterRegistry meterRegistry;
+
+    @Value("${account.service.url}")
+    private String accountServiceUrl;
+
     @CircuitBreaker(name = "accountService", fallbackMethod = "fallbackCreateEvent")
     public Event createEvent(Event event) {
 
         log.info("Processing event: eventId={}, accountId={}",
                 event.getEventId(), event.getAccountId());
 
-        // STEP 1: VALIDATION FIRST
         if (event.getAmount() == null || event.getAmount() <= 0) {
             throw new IllegalArgumentException("Amount must be greater than 0");
         }
 
-        // STEP 2: Idempotency
+        if (!"CREDIT".equals(event.getType()) && !"DEBIT".equals(event.getType())) {
+            throw new IllegalArgumentException("Event type must be CREDIT or DEBIT");
+        }
+
         Optional<Event> existingEvent = repository.findById(event.getEventId());
         if (existingEvent.isPresent()) {
             log.warn("Duplicate event detected: eventId={}", event.getEventId());
@@ -45,18 +52,17 @@ public class EventService {
         }
 
         try {
-            String url = "http://localhost:8081/accounts/"
-                    + event.getAccountId() + "/transactions";
+            String url = accountServiceUrl + "/accounts/"
+                    + event.getAccountId()
+                    + "/transactions";
 
             Map<String, Object> request = Map.of(
                     "type", event.getType(),
                     "amount", event.getAmount()
             );
 
-            String traceId = MDC.get("traceId");
-
             HttpHeaders headers = new HttpHeaders();
-            headers.set("X-Trace-Id", traceId);
+            headers.set("X-Trace-Id", MDC.get("traceId"));
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
 
@@ -64,17 +70,16 @@ public class EventService {
 
             restTemplate.postForEntity(url, entity, Void.class);
 
-            //STEP 3: Save event
             Event savedEvent = repository.save(event);
 
-            log.info("Event stored successfully: eventId={}", savedEvent.getEventId());
-
-            //METRIC: success count
             meterRegistry.counter("events.processed.count").increment();
+
+            log.info("Event stored successfully: eventId={}", savedEvent.getEventId());
 
             return savedEvent;
 
         } catch (RestClientException ex) {
+            log.error("Failed to call Account Service for eventId={}", event.getEventId(), ex);
 
             meterRegistry.counter("events.failed.count").increment();
 
@@ -91,7 +96,9 @@ public class EventService {
     public List<Event> getEvents(String accountId) {
         return repository.findByAccountIdOrderByEventTimestamp(accountId);
     }
+
     public Event fallbackCreateEvent(Event event, Exception ex) {
+        log.error("Circuit breaker triggered for eventId={}", event.getEventId(), ex);
 
         meterRegistry.counter("events.failed.count").increment();
 

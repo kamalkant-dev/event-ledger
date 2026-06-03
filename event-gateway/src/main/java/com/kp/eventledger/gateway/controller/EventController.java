@@ -20,6 +20,15 @@ public class EventController {
     @PostMapping
     public ResponseEntity<Event> createEvent(@RequestBody Event event) {
         log.info("Received event request: eventId={}", event.getEventId());
+
+        if (event.getAmount() == null || event.getAmount() <= 0) {
+            throw new IllegalArgumentException("Amount must be greater than 0");
+        }
+
+        if (!"CREDIT".equals(event.getType()) && !"DEBIT".equals(event.getType())) {
+            throw new IllegalArgumentException("Event type must be CREDIT or DEBIT");
+        }
+
         return ResponseEntity.ok(service.createEvent(event));
     }
 

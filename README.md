@@ -71,7 +71,7 @@ docker --version
 
 ```bash
 # Clone the repository
-git clone <your-repo-url>
+git clone https://github.com/kamalkant-dev/event-ledger.git
 cd event-ledger
 
 # Install dependencies for both services
@@ -103,6 +103,33 @@ To stop:
 docker-compose down
 ```
 
+---
+
+## Service Configuration
+
+The Gateway uses a configurable Account Service URL.
+
+### Local Execution
+
+Configured in `event-gateway/src/main/resources/application.yml`:
+
+```yaml
+account:
+  service:
+    url: http://localhost:8081
+```
+
+### Docker Compose Execution
+
+Docker overrides the URL using environment variables:
+
+```yaml
+environment:
+  ACCOUNT_SERVICE_URL: http://account-service:8081
+```
+
+This allows the same application package to run locally and inside Docker containers without any code changes.
+
 ### Option 2 — Run Manually (Two Terminals)
 
 **Terminal 1 — Start Account Service first:**
@@ -133,9 +160,8 @@ mvn test
 
 | Test Class | Type | Scenarios Covered |
 |---|---|---|
-| `EventControllerTest` | Unit (`@WebMvcTest`) | Create event success, invalid amount (400), service unavailable (503), get by ID, get by accountId |
-| `EventServiceTest` | Unit (Mockito) | Successful processing, duplicate event (idempotency), external service failure, validation |
-| `EventIntegrationTest` | Integration (`MockRestServiceServer`) | Full Gateway → Account Service flow, `X-Trace-Id` header propagation |
+| `EventControllerTest` | Unit (`@WebMvcTest`) | Create event success, validation failure (400), Account Service unavailable (503), get event by ID |
+| `EventIntegrationTest` | Integration (`@SpringBootTest`) | Complete Gateway flow with mocked Account Service communication |
 
 ---
 
@@ -192,7 +218,7 @@ GET /events/{id}
 
 ### Get Events by Account
 ```
-GET /events?accountId={accountId}
+GET /events?account={accountId}
 ```
 
 ---
@@ -208,8 +234,10 @@ GET /events?accountId={accountId}
 
 ## Assumptions
 
-- Account Service runs on `localhost:8081`
-- H2 in-memory database used for local development and testing
+- Account Service URL is externally configurable
+- Local execution uses localhost communication
+- Docker execution uses container service discovery
+- H2 in-memory database used for development and testing
 - No authentication implemented
 
 ---

@@ -16,6 +16,10 @@ management:
       exposure:
         include: health,metrics
 
+account:
+  service:
+    url: http://localhost:8081
+
 resilience4j:
   circuitbreaker:
     instances:
