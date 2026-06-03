@@ -1,0 +1,6 @@
+com\kp\eventledger\gateway\repository\EventRepository.class
+com\kp\eventledger\gateway\service\EventService.class
+com\kp\eventledger\gateway\controller\EventController.class
+com\kp\eventledger\gateway\entity\Event.class
+com\kp\eventledger\gateway\config\AppConfig.class
+com\kp\eventledger\gateway\EventGatewayApplication.class
