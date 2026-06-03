@@ -32,16 +32,19 @@ public class EventService {
         log.info("Processing event: eventId={}, accountId={}",
                 event.getEventId(), event.getAccountId());
 
-        // STEP 1: Idempotency check
-        Optional<Event> existingEvent = repository.findById(event.getEventId());
+        // STEP 1: VALIDATION FIRST
+        if (event.getAmount() == null || event.getAmount() <= 0) {
+            throw new IllegalArgumentException("Amount must be greater than 0");
+        }
 
+        // STEP 2: Idempotency
+        Optional<Event> existingEvent = repository.findById(event.getEventId());
         if (existingEvent.isPresent()) {
             log.warn("Duplicate event detected: eventId={}", event.getEventId());
             return existingEvent.get();
         }
 
         try {
-            // STEP 2: Call Account Service
             String url = "http://localhost:8081/accounts/"
                     + event.getAccountId() + "/transactions";
 
@@ -50,14 +53,14 @@ public class EventService {
                     "amount", event.getAmount()
             );
 
-            log.info("Calling Account Service for accountId={}", event.getAccountId());
-
             String traceId = MDC.get("traceId");
 
             HttpHeaders headers = new HttpHeaders();
             headers.set("X-Trace-Id", traceId);
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
+
+            log.info("Calling Account Service for accountId={}", event.getAccountId());
 
             restTemplate.postForEntity(url, entity, Void.class);
 
@@ -73,29 +76,27 @@ public class EventService {
 
         } catch (RestClientException ex) {
 
-            log.error("Failed to call Account Service for eventId={}", event.getEventId(), ex);
-
-            //METRIC: failure count
             meterRegistry.counter("events.failed.count").increment();
-            throw new ServiceUnavailableException("Account Service is unavailable. Please try again later.");
+
+            throw new ServiceUnavailableException(
+                    "Account Service is unavailable. Please try again later."
+            );
         }
     }
 
     public Optional<Event> getEvent(String id) {
-        log.info("Fetching event by id={}", id);
         return repository.findById(id);
     }
 
     public List<Event> getEvents(String accountId) {
-        log.info("Fetching events for accountId={}", accountId);
         return repository.findByAccountIdOrderByEventTimestamp(accountId);
     }
     public Event fallbackCreateEvent(Event event, Exception ex) {
 
-        log.error("Circuit breaker triggered for eventId={}", event.getEventId(), ex);
-
         meterRegistry.counter("events.failed.count").increment();
 
-        throw new ServiceUnavailableException("Account Service temporarily unavailable (circuit breaker open)");
+        throw new ServiceUnavailableException(
+                "Account Service temporarily unavailable (circuit breaker open)"
+        );
     }
 }
