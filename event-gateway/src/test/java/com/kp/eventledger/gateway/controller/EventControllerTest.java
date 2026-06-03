@@ -11,12 +11,11 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*; // includes get, post
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(EventController.class)
@@ -31,14 +30,10 @@ class EventControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-   
-    // CREATE EVENT TESTS
-   
-
     @Test
     void shouldCreateEventSuccessfully() throws Exception {
 
-        Event event = new Event("evt-1","acct-1","CREDIT",100.0,"2026");
+        Event event = new Event("evt-1", "acct-1", "CREDIT", 100.0, "2026");
 
         when(eventService.createEvent(any())).thenReturn(event);
 
@@ -52,10 +47,18 @@ class EventControllerTest {
     @Test
     void shouldFailForInvalidAmount() throws Exception {
 
-        Event event = new Event("evt-invalid","acct-1","CREDIT",0.0,"2026");
+        Event event = new Event("evt-invalid", "acct-1", "CREDIT", 0.0, "2026");
 
-        when(eventService.createEvent(any()))
-                .thenThrow(new IllegalArgumentException("Invalid amount"));
+        mockMvc.perform(post("/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(event)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void shouldFailForInvalidEventType() throws Exception {
+
+        Event event = new Event("evt-invalid-type", "acct-1", "TRANSFER", 100.0, "2026");
 
         mockMvc.perform(post("/events")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -66,7 +69,7 @@ class EventControllerTest {
     @Test
     void shouldReturn503WhenServiceDown() throws Exception {
 
-        Event event = new Event("evt-2","acct-1","CREDIT",100.0,"2026");
+        Event event = new Event("evt-2", "acct-1", "CREDIT", 100.0, "2026");
 
         when(eventService.createEvent(any()))
                 .thenThrow(new ServiceUnavailableException("Service Down"));
@@ -77,14 +80,10 @@ class EventControllerTest {
                 .andExpect(status().isServiceUnavailable());
     }
 
-   
-    // GET EVENT BY ID
-   
-
     @Test
     void shouldReturnEventById() throws Exception {
 
-        Event event = new Event("evt-1","acct-1","CREDIT",100.0,"2026");
+        Event event = new Event("evt-1", "acct-1", "CREDIT", 100.0, "2026");
 
         when(eventService.getEvent("evt-1"))
                 .thenReturn(Optional.of(event));
@@ -104,5 +103,4 @@ class EventControllerTest {
         mockMvc.perform(get("/events/evt-404"))
                 .andExpect(status().isNotFound());
     }
-
 }

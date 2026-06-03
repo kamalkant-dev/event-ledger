@@ -1,9 +1,9 @@
 com\kp\eventledger\gateway\exception\ServiceUnavailableException.class
 com\kp\eventledger\gateway\repository\EventRepository.class
 com\kp\eventledger\gateway\service\EventService.class
-com\kp\eventledger\gateway\controller\EventController.class
 com\kp\eventledger\gateway\entity\Event.class
 com\kp\eventledger\gateway\exception\GlobalExceptionHandler.class
 com\kp\eventledger\gateway\config\RestTemplateConfig.class
 com\kp\eventledger\gateway\config\TraceFilter.class
+com\kp\eventledger\gateway\service\AccountServiceClient.class
 com\kp\eventledger\gateway\EventGatewayApplication.class
