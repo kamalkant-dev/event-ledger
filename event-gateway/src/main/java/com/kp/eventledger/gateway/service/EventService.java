@@ -5,6 +5,9 @@ import com.kp.eventledger.gateway.repository.EventRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.slf4j.MDC;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.Map;
@@ -42,8 +45,14 @@ public class EventService {
         );
 
         log.info("Calling Account Service for accountId={}", event.getAccountId());
+        String traceId = MDC.get("traceId");
 
-        restTemplate.postForEntity(url, request, Void.class);
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Trace-Id", traceId);
+
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
+
+        restTemplate.postForEntity(url, entity, Void.class);
 
         // STEP 3: Save event ONLY once
         Event savedEvent = repository.save(event);
