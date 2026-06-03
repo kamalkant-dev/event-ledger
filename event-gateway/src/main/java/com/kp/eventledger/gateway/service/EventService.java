@@ -8,7 +8,9 @@ import org.springframework.stereotype.Service;
 import org.slf4j.MDC;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClientException;
 
 import java.util.Map;
 import java.util.Optional;
@@ -21,45 +23,60 @@ public class EventService {
 
     private final EventRepository repository;
     private final RestTemplate restTemplate;
+    private final MeterRegistry meterRegistry;
 
     public Event createEvent(Event event) {
 
         log.info("Processing event: eventId={}, accountId={}",
                 event.getEventId(), event.getAccountId());
 
-        //STEP 1: Idempotency check
+        // STEP 1: Idempotency check
         Optional<Event> existingEvent = repository.findById(event.getEventId());
 
         if (existingEvent.isPresent()) {
             log.warn("Duplicate event detected: eventId={}", event.getEventId());
-            return existingEvent.get(); // return existing event, DO NOT process again
+            return existingEvent.get();
         }
 
-        //STEP 2: Call Account Service
-        String url = "http://localhost:8081/accounts/"
-                + event.getAccountId() + "/transactions";
+        try {
+            // STEP 2: Call Account Service
+            String url = "http://localhost:8081/accounts/"
+                    + event.getAccountId() + "/transactions";
 
-        Map<String, Object> request = Map.of(
-                "type", event.getType(),
-                "amount", event.getAmount()
-        );
+            Map<String, Object> request = Map.of(
+                    "type", event.getType(),
+                    "amount", event.getAmount()
+            );
 
-        log.info("Calling Account Service for accountId={}", event.getAccountId());
-        String traceId = MDC.get("traceId");
+            log.info("Calling Account Service for accountId={}", event.getAccountId());
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("X-Trace-Id", traceId);
+            String traceId = MDC.get("traceId");
 
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("X-Trace-Id", traceId);
 
-        restTemplate.postForEntity(url, entity, Void.class);
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
 
-        // STEP 3: Save event ONLY once
-        Event savedEvent = repository.save(event);
+            restTemplate.postForEntity(url, entity, Void.class);
 
-        log.info("Event stored successfully: eventId={}", savedEvent.getEventId());
+            //STEP 3: Save event
+            Event savedEvent = repository.save(event);
 
-        return savedEvent;
+            log.info("Event stored successfully: eventId={}", savedEvent.getEventId());
+
+            //METRIC: success count
+            meterRegistry.counter("events.processed.count").increment();
+
+            return savedEvent;
+
+        } catch (RestClientException ex) {
+
+            log.error("Failed to call Account Service for eventId={}", event.getEventId(), ex);
+
+            //METRIC: failure count
+            meterRegistry.counter("events.failed.count").increment();
+            throw ex;
+        }
     }
 
     public Optional<Event> getEvent(String id) {

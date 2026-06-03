@@ -10,3 +10,8 @@ spring:
 logging:
   pattern:
     level: "%5p [traceId=%X{traceId}]"
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
