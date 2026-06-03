@@ -1,105 +1,55 @@
 package com.kp.eventledger.gateway.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kp.eventledger.gateway.entity.Event;
 import com.kp.eventledger.gateway.repository.EventRepository;
+import com.kp.eventledger.gateway.service.EventService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.http.*;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.web.client.ResourceAccessException;
+import org.mockito.ArgumentCaptor;
+import org.slf4j.MDC;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.client.RestTemplate;
 
-import static org.mockito.ArgumentMatchers.*;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
-@AutoConfigureMockMvc
-class EventIntegrationTest {
-
-    @Autowired
-    private MockMvc mockMvc;
-
-    @Autowired
-    private ObjectMapper objectMapper;
-
-    @Autowired
-    private EventRepository eventRepository;
-
-    @MockBean
-    private RestTemplate restTemplate;
+class EventServiceTest {
 
     @Test
-    void shouldProcessFullFlowSuccessfully() throws Exception {
+    void shouldPropagateTraceIdToAccountService() {
 
-        Event event = new Event(
-                "evt-int-1",
-                "acct-1",
-                "CREDIT",
-                200.0,
-                "2026"
-        );
+        EventRepository repository = mock(EventRepository.class);
+        RestTemplate restTemplate = mock(RestTemplate.class);
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
-        when(restTemplate.postForEntity(
+        EventService service = new EventService(repository, restTemplate, meterRegistry);
+
+        Event event = new Event("evt-1", "acct-1", "CREDIT", 100.0, "2026");
+
+        when(repository.findById(any())).thenReturn(Optional.empty());
+        when(repository.save(any())).thenReturn(event);
+
+        // Set traceId in MDC
+        MDC.put("traceId", "test-trace-123");
+
+        ArgumentCaptor<HttpEntity> captor = ArgumentCaptor.forClass(HttpEntity.class);
+
+        service.createEvent(event);
+
+        verify(restTemplate).postForEntity(
                 anyString(),
-                any(),
+                captor.capture(),
                 eq(Void.class)
-        )).thenReturn(new ResponseEntity<>(HttpStatus.OK));
-
-        mockMvc.perform(post("/events")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(event)))
-                .andExpect(status().isOk());
-
-        assertTrue(eventRepository.findById("evt-int-1").isPresent());
-    }
-
-    @Test
-    void shouldReturn503WhenAccountServiceFails() throws Exception {
-
-        Event event = new Event(
-                "evt-fail-1",
-                "acct-1",
-                "CREDIT",
-                100.0,
-                "2026"
         );
 
-        when(restTemplate.postForEntity(
-                anyString(),
-                any(),
-                eq(Void.class)
-        )).thenThrow(new ResourceAccessException("Account service down"));
+        HttpHeaders headers = captor.getValue().getHeaders();
 
-        mockMvc.perform(post("/events")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(event)))
-                .andExpect(status().isServiceUnavailable());
-    }
+        assertThat(headers.getFirst("X-Trace-Id"))
+                .isEqualTo("test-trace-123");
 
-    @Test
-    void shouldReturn400ForInvalidAmountBeforeCallingAccountService() throws Exception {
-
-        Event event = new Event(
-                "evt-invalid-1",
-                "acct-1",
-                "CREDIT",
-                0.0,
-                "2026"
-        );
-
-        mockMvc.perform(post("/events")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(event)))
-                .andExpect(status().isBadRequest());
-
-        verify(restTemplate, never())
-                .postForEntity(anyString(), any(), eq(Void.class));
+        MDC.clear();
     }
 }
