@@ -1,5 +1,5 @@
 
-package com.example.account;
+package com.kp.eventledger.account;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
