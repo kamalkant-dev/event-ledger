@@ -1,0 +1,3 @@
+com\kp\eventledger\gateway\service\EventServiceTest.class
+com\kp\eventledger\gateway\controller\EventControllerTest.class
+com\kp\eventledger\gateway\EventIntegrationTest.class
