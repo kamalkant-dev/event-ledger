@@ -1,6 +1,7 @@
 package com.kp.eventledger.gateway.service;
 
 import com.kp.eventledger.gateway.entity.Event;
+import com.kp.eventledger.gateway.exception.ServiceUnavailableException;
 import com.kp.eventledger.gateway.repository.EventRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -8,7 +9,10 @@ import org.springframework.stereotype.Service;
 import org.slf4j.MDC;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.web.client.RestTemplate;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import org.springframework.web.client.RestClientException;
 
 import java.util.Map;
 import java.util.Optional;
@@ -21,45 +25,60 @@ public class EventService {
 
     private final EventRepository repository;
     private final RestTemplate restTemplate;
-
+    private final MeterRegistry meterRegistry;
+    @CircuitBreaker(name = "accountService", fallbackMethod = "fallbackCreateEvent")
     public Event createEvent(Event event) {
 
         log.info("Processing event: eventId={}, accountId={}",
                 event.getEventId(), event.getAccountId());
 
-        //STEP 1: Idempotency check
+        // STEP 1: Idempotency check
         Optional<Event> existingEvent = repository.findById(event.getEventId());
 
         if (existingEvent.isPresent()) {
             log.warn("Duplicate event detected: eventId={}", event.getEventId());
-            return existingEvent.get(); // return existing event, DO NOT process again
+            return existingEvent.get();
         }
 
-        //STEP 2: Call Account Service
-        String url = "http://localhost:8081/accounts/"
-                + event.getAccountId() + "/transactions";
+        try {
+            // STEP 2: Call Account Service
+            String url = "http://localhost:8081/accounts/"
+                    + event.getAccountId() + "/transactions";
 
-        Map<String, Object> request = Map.of(
-                "type", event.getType(),
-                "amount", event.getAmount()
-        );
+            Map<String, Object> request = Map.of(
+                    "type", event.getType(),
+                    "amount", event.getAmount()
+            );
 
-        log.info("Calling Account Service for accountId={}", event.getAccountId());
-        String traceId = MDC.get("traceId");
+            log.info("Calling Account Service for accountId={}", event.getAccountId());
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("X-Trace-Id", traceId);
+            String traceId = MDC.get("traceId");
 
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("X-Trace-Id", traceId);
 
-        restTemplate.postForEntity(url, entity, Void.class);
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
 
-        // STEP 3: Save event ONLY once
-        Event savedEvent = repository.save(event);
+            restTemplate.postForEntity(url, entity, Void.class);
 
-        log.info("Event stored successfully: eventId={}", savedEvent.getEventId());
+            //STEP 3: Save event
+            Event savedEvent = repository.save(event);
 
-        return savedEvent;
+            log.info("Event stored successfully: eventId={}", savedEvent.getEventId());
+
+            //METRIC: success count
+            meterRegistry.counter("events.processed.count").increment();
+
+            return savedEvent;
+
+        } catch (RestClientException ex) {
+
+            log.error("Failed to call Account Service for eventId={}", event.getEventId(), ex);
+
+            //METRIC: failure count
+            meterRegistry.counter("events.failed.count").increment();
+            throw new ServiceUnavailableException("Account Service is unavailable. Please try again later.");
+        }
     }
 
     public Optional<Event> getEvent(String id) {
@@ -70,5 +89,13 @@ public class EventService {
     public List<Event> getEvents(String accountId) {
         log.info("Fetching events for accountId={}", accountId);
         return repository.findByAccountIdOrderByEventTimestamp(accountId);
+    }
+    public Event fallbackCreateEvent(Event event, Exception ex) {
+
+        log.error("Circuit breaker triggered for eventId={}", event.getEventId(), ex);
+
+        meterRegistry.counter("events.failed.count").increment();
+
+        throw new ServiceUnavailableException("Account Service temporarily unavailable (circuit breaker open)");
     }
 }

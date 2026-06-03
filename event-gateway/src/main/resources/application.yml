@@ -10,3 +10,18 @@ spring:
 logging:
   pattern:
     level: "%5p [traceId=%X{traceId}]"
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      accountService:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 2
