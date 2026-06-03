@@ -7,3 +7,6 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+logging:
+  pattern:
+    level: "%5p [traceId=%X{traceId}]"
